@@ -111,13 +111,13 @@ llm:
 
 For Phase 3 (LLM Integration), you need to provide your OpenAI API key. You can do this in two ways:
 
-**Option 1: Environment Variable (Recommended)**
+**Option 1: Environment Variable**
 
 ```bash
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-**Option 2: .env File**
+**Option 2: .env File (Recommended)**
 Create a `.env` file in your project root:
 
 ```bash
