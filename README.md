@@ -19,13 +19,13 @@ poetry install
 Run the V2 pipeline from the package CLI:
 
 ```bash
-poetry run lovelace --project spring-petclinic-main --auto-approve
+poetry run lovelace --project example-monolith --auto-approve
 ```
 
 If Poetry is not installed, run the module directly:
 
 ```bash
-python -m lovelace --project spring-petclinic-main --auto-approve
+python -m lovelace --project example-monolith --auto-approve
 ```
 
 Run with explicit paths:
@@ -68,13 +68,13 @@ Generate dependency graph visualization directly from the Lovelace CLI:
 
 ```bash
 # Interactive HTML visualization (recommended for large graphs)
-poetry run lovelace --project spring-petclinic-main --visualize html
+poetry run lovelace --project example-monolith --visualize html
 
 # Static PNG visualization
-poetry run lovelace --project spring-petclinic-main --visualize png
+poetry run lovelace --project example-monolith --visualize png
 
 # Optional: custom graph JSON output path
-poetry run lovelace --project spring-petclinic-main --visualize html --graph-json ./artifacts/dependency_graph.json
+poetry run lovelace --project example-monolith --visualize html --graph-json ./artifacts/dependency_graph.json
 ```
 
 The interactive HTML visualization allows you to:
