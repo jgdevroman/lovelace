@@ -294,6 +294,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "[/dim]\n"
     )
 
+    if args.visualize:
+        console.print("[bold]Generating dependency graph before pipeline generation...[/bold]")
+        try:
+            _generate_visualization(
+                analyzer=analyzer,
+                console=console,
+                source_dir=source_dir,
+                output_dir=output_dir,
+                fmt=args.visualize,
+                graph_json_path=args.graph_json,
+            )
+        except ImportError as exc:
+            console.print(f"[yellow]Visualization skipped: missing dependency ({exc}).[/yellow]")
+        except Exception as exc:
+            console.print(f"[yellow]Visualization skipped: {exc}[/yellow]")
+
     try:
         results = run_llm_first_pipeline_v2(
             analyzer=analyzer,
@@ -330,21 +346,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.json:
         console.print_json(json.dumps(results, default=str))
-
-    if args.visualize:
-        try:
-            _generate_visualization(
-                analyzer=analyzer,
-                console=console,
-                source_dir=source_dir,
-                output_dir=output_dir,
-                fmt=args.visualize,
-                graph_json_path=args.graph_json,
-            )
-        except ImportError as exc:
-            console.print(f"[yellow]Visualization skipped: missing dependency ({exc}).[/yellow]")
-        except Exception as exc:
-            console.print(f"[yellow]Visualization skipped: {exc}[/yellow]")
 
     if build_failures:
         console.print(f"\n[red]Completed with {build_failures} build verification failure(s).[/red]")
