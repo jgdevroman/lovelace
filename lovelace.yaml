@@ -1,0 +1,37 @@
+project:
+  name: "LegacyMonolith"
+  java_version: 11
+
+analysis:
+  ignore_paths:
+    - "**/generated/**"
+    - "**/test/**"
+    - "**/legacy/deprecated/**"
+
+  # # Force specific classes to stay together (Manual override)
+  # constraints:
+  #   - group: "AuthenticationCore"
+  #     classes: ["com.myapp.security.*", "com.myapp.user.UserEntity"]
+
+  # Clustering configuration
+  clustering:
+    algorithm: "louvain"
+    resolution: 0.3 # Lower = fewer, larger clusters (default is 1.0)
+
+# llm:
+#   model: "gpt-4o-mini"
+#   cost_limit_usd: 5.00 # Safety brake
+#   temperature: 0.7
+#   api_key_env: "OPENAI_API_KEY" # Environment variable name for API key
+
+# # DeepSeek example
+# llm:
+#   model: "deepseek-chat"
+#   base_url: "https://api.deepseek.com"
+#   api_key_env: "DEEPSEEK_API_KEY"
+
+# Grok example
+llm:
+  model: "grok-4-1-fast-reasoning"
+  base_url: "https://api.x.ai/v1"
+  api_key_env: "XAI_API_KEY"

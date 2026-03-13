@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "lovelace"
+version = "0.1.0"
+description = "AI-Powered Monolith-to-Microservice Migration Framework"
+authors = ["Roman Shirasaki"]
+readme = "README.md"
+packages = [{include = "lovelace"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pyyaml = "^6.0"
+javalang = "^0.13.0"
+networkx = "^3.0"
+rich = "^13.0"
+pydantic = "^2.0"
+chromadb = "^0.4.0"
+sentence-transformers = "^2.2.0"
+openai = "^1.0.0"
+tiktoken = "^0.12.0"
+python-dotenv = "^1.0.0"
+numpy = "<2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0"
+black = "^23.0"
+ruff = "^0.1.0"
+matplotlib = "^3.7"
+pyvis = "^0.3.0"
+
+[tool.poetry.scripts]
+lovelace = "lovelace.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
