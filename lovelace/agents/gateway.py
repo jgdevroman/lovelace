@@ -227,8 +227,17 @@ Analyze the error and use the appropriate tools to fix the files. After fixing, 
         
         if not project_metadata:
             return default_version
-            
-        version = project_metadata.get("spring_boot_version", default_version)
+
+        # .get(default) does not apply when the key exists with value None.
+        raw_version = project_metadata.get("spring_boot_version")
+        if raw_version is None:
+            logger.info(f"No Spring Boot version detected, using {default_version}")
+            return default_version
+
+        version = str(raw_version).strip()
+        if not version:
+            logger.info(f"Empty Spring Boot version detected, using {default_version}")
+            return default_version
         
         # Validate - reject invalid versions
         if version.startswith("4.") or not version[0].isdigit():

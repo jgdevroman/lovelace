@@ -128,16 +128,3 @@ OPENAI_API_KEY=your-api-key-here
 The `.env` file will be automatically loaded if it exists. Environment variables take precedence over `.env` file values.
 
 **Note:** The `.env` file is automatically ignored by git (via `.gitignore`), so your API key won't be committed.
-
-## Development
-
-```bash
-# Run tests (when implemented)
-poetry run pytest
-
-# Format code
-poetry run black .
-
-# Lint code
-poetry run ruff check .
-```

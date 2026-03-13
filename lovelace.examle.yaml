@@ -1,5 +1,5 @@
 project:
-  name: "LegacyMonolith"
+  name: "Test Migration"
   java_version: 11
 
 analysis:
@@ -7,16 +7,6 @@ analysis:
     - "**/generated/**"
     - "**/test/**"
     - "**/legacy/deprecated/**"
-
-  # # Force specific classes to stay together (Manual override)
-  # constraints:
-  #   - group: "AuthenticationCore"
-  #     classes: ["com.myapp.security.*", "com.myapp.user.UserEntity"]
-
-  # Clustering configuration
-  clustering:
-    algorithm: "louvain"
-    resolution: 0.3 # Lower = fewer, larger clusters (default is 1.0)
 
 # llm:
 #   model: "gpt-4o-mini"
