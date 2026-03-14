@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from lovelace.agents.generator_tools import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -64,13 +66,31 @@ def process_compose(
     # Validation loop with self-fixing
     for attempt in range(1, max_iterations + 1):
         logger.info(f"Docker-compose validation attempt {attempt}/{max_iterations}")
+
+        # Best-effort cleanup of stale containers that still hold compose ports.
+        _cleanup_conflicting_containers(compose_path, list(services.keys()))
         
         # Bring up services
         up_result = _docker_compose_up(output_dir)
         if not up_result.success:
             logger.warning(f"docker-compose up failed: {up_result.output}")
+
+            failure_type = _classify_compose_failure(up_result.output)
+            logger.info(f"Compose failure type classified as: {failure_type}")
+
+            if failure_type == "environment_conflict":
+                # Retry after cleanup; this class of error is usually transient.
+                _cleanup_conflicting_containers(compose_path, list(services.keys()))
+                _docker_compose_down(output_dir)
+                continue
+
             # Try to fix compose file itself
-            fixed = _fix_compose_file(compose_path, up_result.output, llm_client)
+            fixed = _fix_compose_file(
+                compose_path,
+                up_result.output,
+                llm_client,
+                expected_services=list(services.keys()),
+            )
             if fixed:
                 continue
             else:
@@ -109,20 +129,14 @@ def process_compose(
         # Bring down before fixing
         _docker_compose_down(output_dir)
         
-        # Try to fix the failing services
-        any_fixed = False
-        for svc_name, logs in error_logs.items():
-            if svc_name in services:
-                svc_path = services[svc_name]["path"]
-                fixed = _fix_service(svc_path, logs, llm_client)
-                if fixed:
-                    any_fixed = True
-                    # Rebuild docker image
-                    _rebuild_service_image(svc_path, svc_name)
-        
-        if not any_fixed:
-            logger.warning("Could not fix any services, trying compose file fix...")
-            _fix_compose_file(compose_path, str(error_logs), llm_client)
+        # Policy: do not mutate generated services during compose validation.
+        logger.warning("Service auto-fixes disabled; attempting docker-compose.yml-only fix")
+        _fix_compose_file(
+            compose_path,
+            str(error_logs),
+            llm_client,
+            expected_services=list(services.keys()),
+        )
     
     logger.error(f"Failed to validate compose after {max_iterations} attempts")
     _docker_compose_down(output_dir)
@@ -157,8 +171,8 @@ def _get_service_port(service_path: Path) -> int:
 
 def _generate_compose_deterministic(services: Dict[str, Dict]) -> str:
     """Generate docker-compose.yml deterministically (no LLM)."""
-    # Assign unique host ports to avoid conflicts
-    host_port_base = 8080
+    # Assign unique host ports using a high range to avoid local collisions.
+    host_port_base = 18080
     service_configs = []
     
     # Sort services: api-gateway first, then others
@@ -173,7 +187,6 @@ def _generate_compose_deterministic(services: Dict[str, Dict]) -> str:
         
         config = f"""  {name}:
     build: ./services/{name}
-    container_name: {name}
     ports:
       - "{host_port}:{container_port}"
     environment:
@@ -329,7 +342,12 @@ def _get_container_logs(service_name: str, output_dir: Path) -> str:
         return str(e)
 
 
-def _fix_compose_file(compose_path: Path, error: str, llm_client: Any) -> bool:
+def _fix_compose_file(
+    compose_path: Path,
+    error: str,
+    llm_client: Any,
+    expected_services: Optional[List[str]] = None,
+) -> bool:
     """Fix docker-compose.yml based on error."""
     current_content = compose_path.read_text()
     
@@ -361,10 +379,20 @@ Return ONLY the fixed YAML content, no explanation."""
             if match:
                 content = match.group(1).strip()
         
-        if content and content != current_content:
-            compose_path.write_text(content, encoding="utf-8")
-            logger.info("Applied fix to docker-compose.yml")
-            return True
+        if not content or content == current_content:
+            return False
+
+        if not _validate_compose_structure(content, expected_services or []):
+            logger.warning("Rejected compose fix: structural validation failed")
+            return False
+
+        if not _validate_compose_config(content, compose_path.parent):
+            logger.warning("Rejected compose fix: 'docker-compose config' failed")
+            return False
+
+        compose_path.write_text(content, encoding="utf-8")
+        logger.info("Applied fix to docker-compose.yml")
+        return True
     except Exception as e:
         logger.error(f"Failed to fix compose: {e}")
     
@@ -493,3 +521,159 @@ def _rebuild_service_image(service_path: Path, service_name: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to rebuild {service_name}: {e}")
         return False
+
+
+def _classify_compose_failure(error_output: str) -> str:
+    """Classify docker-compose up failure for targeted recovery."""
+    text = (error_output or "").lower()
+
+    if "yaml:" in text or "cannot start any token" in text or "did not find expected" in text:
+        return "compose_syntax"
+    if "undefined service" in text or "depends on undefined service" in text:
+        return "compose_semantic"
+    if "failed to solve" in text or "dockerfile:" in text or "target " in text:
+        return "service_build"
+    if "port is already allocated" in text or "already in use by container" in text:
+        return "environment_conflict"
+    if "unhealthy" in text or "health" in text:
+        return "runtime_health"
+    return "unknown"
+
+
+
+def _validate_compose_structure(content: str, expected_services: List[str]) -> bool:
+    """Validate basic compose structure and service dependencies."""
+    try:
+        parsed = yaml.safe_load(content)
+    except Exception as e:
+        logger.warning(f"Compose YAML parse failed: {e}")
+        return False
+
+    if not isinstance(parsed, dict):
+        return False
+
+    services = parsed.get("services")
+    if not isinstance(services, dict) or not services:
+        return False
+
+    # Guardrail: never accept a fix that drops discovered services.
+    missing = [name for name in expected_services if name not in services]
+    if missing:
+        logger.warning(f"Compose fix removed required services: {missing}")
+        return False
+
+    service_names = set(services.keys())
+    for name, definition in services.items():
+        if not isinstance(definition, dict):
+            return False
+
+        depends_on = definition.get("depends_on")
+        if isinstance(depends_on, list):
+            if any(dep not in service_names for dep in depends_on):
+                return False
+        elif isinstance(depends_on, dict):
+            if any(dep not in service_names for dep in depends_on.keys()):
+                return False
+
+    return True
+
+
+def _validate_compose_config(content: str, output_dir: Path) -> bool:
+    """Validate candidate compose with docker-compose config before applying."""
+    temp_path = output_dir / ".docker-compose.candidate.yml"
+    try:
+        temp_path.write_text(content, encoding="utf-8")
+        result = subprocess.run(
+            ["docker-compose", "-f", str(temp_path), "config"],
+            cwd=output_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except Exception as e:
+        logger.warning(f"Compose config validation failed: {e}")
+        return False
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except Exception:
+            pass
+
+
+def _cleanup_conflicting_containers(compose_path: Path, service_names: List[str]) -> None:
+    """Stop/remove stale containers that occupy host ports used by compose services."""
+    host_ports = _extract_host_ports(compose_path)
+    if not host_ports:
+        return
+
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.ID}}|{{.Image}}|{{.Ports}}|{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return
+
+        for line in result.stdout.splitlines():
+            parts = line.split("|", 3)
+            if len(parts) != 4:
+                continue
+            container_id, image, ports_text, name = parts
+            if not any(f":{port}->" in ports_text for port in host_ports):
+                continue
+
+            # Only clean up likely pipeline-created containers.
+            is_generated = (
+                image.endswith(":latest")
+                or name.startswith("output-")
+                or any(svc in name for svc in service_names)
+                or any(svc in image for svc in service_names)
+            )
+            if not is_generated:
+                continue
+
+            logger.warning(
+                f"Removing stale container '{name}' using compose port(s): {ports_text}"
+            )
+            subprocess.run(["docker", "rm", "-f", container_id], capture_output=True, timeout=20)
+    except Exception as e:
+        logger.warning(f"Failed to clean conflicting containers: {e}")
+
+
+def _extract_host_ports(compose_path: Path) -> List[int]:
+    """Extract host ports from compose services. Supports short and long ports syntax."""
+    try:
+        parsed = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    services = parsed.get("services") if isinstance(parsed, dict) else None
+    if not isinstance(services, dict):
+        return []
+
+    host_ports: List[int] = []
+    for definition in services.values():
+        if not isinstance(definition, dict):
+            continue
+        ports = definition.get("ports", [])
+        if not isinstance(ports, list):
+            continue
+
+        for entry in ports:
+            if isinstance(entry, str):
+                # e.g. "18080:8080"
+                left = entry.split(":", 1)[0].strip().strip('"').strip("'")
+                if left.isdigit():
+                    host_ports.append(int(left))
+            elif isinstance(entry, dict):
+                published = entry.get("published")
+                if isinstance(published, int):
+                    host_ports.append(published)
+                elif isinstance(published, str) and published.isdigit():
+                    host_ports.append(int(published))
+
+    return sorted(set(host_ports))

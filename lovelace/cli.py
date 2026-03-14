@@ -7,6 +7,7 @@ import json
 import logging
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -245,6 +246,47 @@ def _generate_visualization(
     console.print(f"[green]Visualization generated:[/green] {vis_path}")
 
 
+def _save_final_report(output_dir: Path, results: dict, build_failures: int) -> tuple[Path, Path]:
+    """Persist final run summary to output directory."""
+    report = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "status": "completed_with_build_failures" if build_failures else "completed",
+        "build_failures": build_failures,
+        "results": results,
+    }
+
+    json_path = output_dir / "final-report.json"
+    md_path = output_dir / "final-report.md"
+
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, default=str)
+
+    service_results = results.get("service_results", [])
+    successful = sum(1 for r in service_results if r.get("success"))
+    total = len(service_results)
+
+    lines = [
+        "# Final Pipeline Report",
+        "",
+        f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        f"Status: {'Completed with build verification failures' if build_failures else 'Completed'}",
+        "",
+        "## Summary",
+        "",
+        f"- Services successful: {successful}/{total}",
+        f"- Build verification failures: {build_failures}",
+        f"- Total LLM Cost (USD): {results.get('total_llm_cost_usd', 0):.4f}",
+        f"- Output Directory: {output_dir}",
+        "",
+    ]
+
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return json_path, md_path
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -346,6 +388,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.json:
         console.print_json(json.dumps(results, default=str))
+
+    report_json_path, report_md_path = _save_final_report(
+        output_dir=output_dir,
+        results=results,
+        build_failures=build_failures,
+    )
+    console.print(f"[green]Final report saved:[/green] {report_json_path}")
+    console.print(f"[green]Final report saved:[/green] {report_md_path}")
 
     if build_failures:
         console.print(f"\n[red]Completed with {build_failures} build verification failure(s).[/red]")

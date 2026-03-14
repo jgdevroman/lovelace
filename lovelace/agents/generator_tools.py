@@ -122,10 +122,14 @@ class WritePomTool(BaseTool):
             "required": ["content"]
         }
     
-    def run(self, content: str) -> ToolResult:
+    def run(self, content: str = None, **kwargs) -> ToolResult:
+        # Ignore extra args (e.g. path) and support alternate content key.
+        actual_content = content or kwargs.get("pom_content")
+        if not actual_content:
+            return ToolResult(success=False, output="Missing required argument: content")
         try:
             pom_path = self.service_path / "pom.xml"
-            pom_path.write_text(content, encoding="utf-8")
+            pom_path.write_text(actual_content, encoding="utf-8")
             logger.debug(f"Wrote pom.xml: {pom_path}")
             return ToolResult(success=True, output="Created pom.xml")
         except Exception as e:
@@ -326,16 +330,19 @@ class ReadMonolithSourceTool(BaseTool):
             "required": ["class_fqn"]
         }
     
-    def run(self, class_fqn: str) -> ToolResult:
+    def run(self, class_fqn: str = None, fqn: str = None, **kwargs) -> ToolResult:
+        actual_fqn = class_fqn or fqn or kwargs.get("fully_qualified_name")
+        if not actual_fqn:
+            return ToolResult(success=False, output="Missing required argument: class_fqn")
         try:
-            if class_fqn not in self.graph.graph.nodes:
-                return ToolResult(success=False, output=f"Class not found in graph: {class_fqn}")
+            if actual_fqn not in self.graph.graph.nodes:
+                return ToolResult(success=False, output=f"Class not found in graph: {actual_fqn}")
             
-            node_data = self.graph.graph.nodes[class_fqn]
+            node_data = self.graph.graph.nodes[actual_fqn]
             file_path = node_data.get("file_path", "")
             
             if not file_path:
-                return ToolResult(success=False, output=f"No file path for: {class_fqn}")
+                return ToolResult(success=False, output=f"No file path for: {actual_fqn}")
             
             source_path = Path(file_path)
             if not source_path.is_absolute():
@@ -534,8 +541,13 @@ class DoneTool(BaseTool):
             "required": ["success", "message"]
         }
     
-    def run(self, success: bool, message: str) -> ToolResult:
-        return ToolResult(success=success, output=message)
+    def run(self, success: bool = True, message: str = "Done", **kwargs) -> ToolResult:
+        # Be permissive to reduce orchestration dead-ends from partial tool calls.
+        if "success" in kwargs:
+            success = kwargs["success"]
+        if "message" in kwargs:
+            message = kwargs["message"]
+        return ToolResult(success=bool(success), output=str(message))
 
 
 def create_tool_set(
