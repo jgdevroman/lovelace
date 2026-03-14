@@ -45,6 +45,13 @@ Common options:
 - `--visualize html` (or `--visualize png`)
 - `--graph-json /path/to/dependency_graph.json`
 
+Visualization-only command:
+
+```bash
+# Generate visualization without running the migration pipeline
+poetry run lovelace visualize --project example-monolith --format html
+```
+
 ```python
 from lovelace.core import LovelaceAnalyzer
 
@@ -65,6 +72,16 @@ graph.visualize_interactive(output_path="graph.html")  # Interactive HTML
 ## Visualization
 
 Generate dependency graph visualization directly from the Lovelace CLI:
+
+```bash
+# Visualization only (no pipeline execution)
+poetry run lovelace visualize --project example-monolith --format html
+
+# Visualization only with static PNG output
+poetry run lovelace visualize --project example-monolith --format png
+```
+
+Or, generate visualization as part of a full pipeline run:
 
 ```bash
 # Interactive HTML visualization (recommended for large graphs)

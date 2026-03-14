@@ -17,6 +17,52 @@ from rich.table import Table
 from lovelace.core import LovelaceAnalyzer, run_llm_first_pipeline_v2
 
 
+def _build_visualize_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="lovelace visualize",
+        description="Generate dependency graph visualization without running the migration pipeline.",
+    )
+
+    parser.add_argument(
+        "--project",
+        default="spring-petclinic-main",
+        help="Project name under projects when --source-dir is not provided.",
+    )
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        help="Explicit source directory to analyze. Overrides --project mode.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output directory for generated artifacts.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Path to lovelace.yaml configuration file.",
+    )
+    parser.add_argument(
+        "--format",
+        default="html",
+        choices=["png", "html"],
+        help="Visualization format.",
+    )
+    parser.add_argument(
+        "--graph-json",
+        type=Path,
+        help="Path to save exported dependency graph JSON (default: <output>/dependency_graph.json).",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging.",
+    )
+
+    return parser
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lovelace",
@@ -287,10 +333,58 @@ def _save_final_report(output_dir: Path, results: dict, build_failures: int) -> 
     return json_path, md_path
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
+def _run_visualize_command(args: argparse.Namespace) -> int:
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
 
+    console = Console()
+    console.print("[bold cyan]Lovelace Dependency Graph Visualizer[/bold cyan]")
+
+    config_path = args.config.expanduser().resolve() if args.config else _find_default_config()
+
+    try:
+        analyzer = LovelaceAnalyzer(config_path=config_path)
+    except Exception as exc:
+        console.print(f"[red]Failed to load Lovelace configuration: {exc}[/red]")
+        if not args.config:
+            console.print(
+                "[dim]Tip: pass --config /path/to/lovelace.yaml if auto-discovery fails.[/dim]"
+            )
+        return 1
+
+    try:
+        source_dir, output_dir = _resolve_paths(args, analyzer.project_root)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 1
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"[dim]Source: {source_dir}[/dim]")
+    console.print(f"[dim]Output: {output_dir}[/dim]")
+    console.print(f"[dim]Format: {args.format}[/dim]\n")
+
+    try:
+        _generate_visualization(
+            analyzer=analyzer,
+            console=console,
+            source_dir=source_dir,
+            output_dir=output_dir,
+            fmt=args.format,
+            graph_json_path=args.graph_json,
+        )
+    except ImportError as exc:
+        console.print(f"[yellow]Visualization failed: missing dependency ({exc}).[/yellow]")
+        return 1
+    except Exception as exc:
+        console.print(f"[red]Visualization failed: {exc}[/red]")
+        return 1
+
+    console.print("\n[green]Visualization complete.[/green]")
+    return 0
+
+
+def _run_pipeline_command(args: argparse.Namespace) -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -403,6 +497,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     console.print("\n[green]Lovelace run complete.[/green]")
     return 0
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
+
+    if argv_list and argv_list[0] == "visualize":
+        parser = _build_visualize_parser()
+        args = parser.parse_args(argv_list[1:])
+        return _run_visualize_command(args)
+
+    parser = _build_parser()
+    args = parser.parse_args(argv_list)
+    return _run_pipeline_command(args)
 
 
 if __name__ == "__main__":
