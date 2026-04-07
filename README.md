@@ -16,7 +16,7 @@ poetry install
 
 ### CLI Runner
 
-Run the V2 pipeline from the package CLI:
+Run the migration pipeline from the package CLI:
 
 ```bash
 poetry run lovelace --project example-monolith --auto-approve
@@ -44,30 +44,6 @@ Common options:
 - `--config /path/to/lovelace.yaml`
 - `--visualize html` (or `--visualize png`)
 - `--graph-json /path/to/dependency_graph.json`
-
-Visualization-only command:
-
-```bash
-# Generate visualization without running the migration pipeline
-poetry run lovelace visualize --project example-monolith --format html
-```
-
-```python
-from lovelace.core import LovelaceAnalyzer
-
-analyzer = LovelaceAnalyzer()
-graph = analyzer.analyze(source_dir=Path("./src"))
-
-# Export graph
-analyzer.export_graph(Path("graph.json"), format="json")
-
-# Get summary
-summary = analyzer.get_summary()
-
-# Visualize graph (programmatically)
-graph.visualize(output_path="graph.png")  # Static PNG
-graph.visualize_interactive(output_path="graph.html")  # Interactive HTML
-```
 
 ## Visualization
 

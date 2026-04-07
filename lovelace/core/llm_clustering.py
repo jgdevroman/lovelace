@@ -504,21 +504,48 @@ Return JSON:
             
             # Package cohesion: 1.0 if all same package, decreases with more packages
             package_cohesion = 1.0 / len(packages) if packages else 0.0
-            
-            # Architectural cohesion: bonus for having complete stacks
-            # A complete stack has Entity + Controller + Repository for the same domain
-            has_entity = len(entities) > 0
-            has_controller = len(entry_points) > 0
-            has_repository = any("Repository" in c for c in classes)
-            
-            # Count how many of the 3 key types are present
-            stack_completeness = sum([has_entity, has_controller, has_repository]) / 3.0
-            
-            # Combine: weight package cohesion by stack completeness
-            # - Same package + complete stack = highest cohesion
-            # - Same package + incomplete stack = medium cohesion
-            # - Multiple packages = lower cohesion regardless
-            cohesion = package_cohesion * (0.5 + 0.5 * stack_completeness)
+
+            # Architectural cohesion: score stack completeness per package, then average.
+            # A complete package stack has Entity + Controller + Repository.
+            package_stack = {
+                pkg: {
+                    "has_entity": False,
+                    "has_controller": False,
+                    "has_repository": False,
+                }
+                for pkg in packages
+            }
+
+            for class_fqn in classes:
+                pkg = ".".join(class_fqn.split(".")[:-1])
+                node_type = self.graph.graph.nodes.get(class_fqn, {}).get("type", "Unknown")
+
+                if pkg not in package_stack:
+                    continue
+
+                if node_type == "Entity":
+                    package_stack[pkg]["has_entity"] = True
+                if node_type == "Controller":
+                    package_stack[pkg]["has_controller"] = True
+                if node_type == "Repository" or "Repository" in class_fqn:
+                    package_stack[pkg]["has_repository"] = True
+
+            package_completeness_scores = [
+                (
+                    int(flags["has_entity"])
+                    + int(flags["has_controller"])
+                    + int(flags["has_repository"])
+                ) / 3.0
+                for flags in package_stack.values()
+            ]
+            avg_package_completeness = (
+                sum(package_completeness_scores) / len(package_completeness_scores)
+                if package_completeness_scores
+                else 0.0
+            )
+
+            # Combine: reward clusters with fewer packages and more complete per-package stacks.
+            cohesion = package_cohesion * (0.5 + 0.5 * avg_package_completeness)
             
             # Use edge cohesion if it's higher (rare but possible)
             cohesion = max(edge_cohesion, cohesion)
