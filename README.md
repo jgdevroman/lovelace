@@ -45,7 +45,7 @@ Common options:
 - `--visualize html` (or `--visualize png`)
 - `--graph-json /path/to/dependency_graph.json`
 
-## Visualization
+### Dependency Graph Visualization
 
 Generate dependency graph visualization directly from the Lovelace CLI:
 
